@@ -169,60 +169,57 @@ class DataAcquisitionThread(QThread):
                 self.error_occurred.emit("PTNhp 电源连接失败")
                 return
 
-            if self.last_current != 0.0:
-                ptnhp.set_current(self.last_current)
-                time.sleep(0.5)
 
             instr = RsInstrument('TCPIP::192.168.1.99::INSTR', True, False)
 
             photons = []
             # 关键修复：创建 bfield_array 的副本，避免修改原始数据
             BFields_settings = self.bfield_array.copy()
-            measured_BFields = np.zeros_like(BFields_settings)  # 用于存储实际测量值
+            # measured_BFields = np.zeros_like(BFields_settings)  # 用于存储实际测量值
             Currents = BFields_settings * 2 / 103.6
-
-            final_current = self.last_current
 
             for i in range(len(BFields_settings)):
                 if self.stop_requested:
                     self.error_occurred.emit("测量已被手动停止")
                     break
 
-                BField_val = BFields_settings[i]
                 current = Currents[i]
-
-                ptnhp.set_current(current)
-                time.sleep(0.1)
                 self.current_updated.emit(current)
+                ptnhp.set_current(current)
+
+                BField_val = BFields_settings[i]
+
+                #measured_BFields[i] = BFields_settings[i]
 
                 instr.write_str_with_opc("SINGle", 50000)
                 instr.write_str("FORMat:DATA REAL,32")
                 instr.bin_float_numbers_format = BinFloatFormat.Single_4bytes_swapped
                 instr.data_chunk_size = 100000
 
+
                 data_photon = np.array(instr.query_bin_or_ascii_float_list("CHAN2:DATA?"))
                 data_BField = np.array(instr.query_bin_or_ascii_float_list("CHAN3:DATA?"))
                 self.update_oscilloscope_signal.emit(data_photon, data_BField)
+
 
                 temp_photon = moving_average(data_photon, 200)
                 photon = integrate_waveform(temp_photon, total_time=1.2E-3, method='trapz')
                 photons.append(photon)
 
-                # 将实际测量值存入新数组
-                measured_BFields[i] = np.mean(data_BField)
-
                 photon_val = photon * self.gain_1
                 # 使用实际测量值更新散点图
-                self.update_scatter_signal.emit(measured_BFields[i], photon_val, self.measurement_type)
+                self.update_scatter_signal.emit(BField_val, photon_val, self.measurement_type)
                 time.sleep(0.001)
 
-            self.parent.last_current = final_current
-            self.error_occurred.emit(f"测量结束，当前磁场电流为: {final_current:.4f} A")
+
+            self.error_occurred.emit(f"测量结束")
 
             photons = np.array(photons) * self.gain_1
             # 使用实际测量的磁场值与光子数据合并
-            merged = np.column_stack((measured_BFields, photons))
+            merged = np.column_stack((BFields_settings, photons))
             self.acquisition_finished.emit(merged)
+
+            ptnhp.set_current(10)
 
         except Exception as e:
             self.error_occurred.emit(f'发生错误: {e}')
@@ -559,7 +556,7 @@ class PolarizationPage(QWidget):
         self._start_acquisition("非极化离子", "unpolarized", lambda data: setattr(self, 'unpolarized_data', data))
 
     def measure_polarized(self):
-        self._start_acquisition("极化离子", "polarized", lambda data: setattr(self, 'polarized_data', data), True)
+        self._start_acquisition("极化离子", "polarized", lambda data: setattr(self, 'polarized_data', data) ,calculate_polarization=True)
 
     def _start_acquisition(self, name, data_type, data_setter, calculate_polarization=False):
         if self.acquisition_thread and self.acquisition_thread.isRunning():
@@ -963,14 +960,14 @@ class PrepareThread(QThread):
 
             steps = self.parent.ramp_steps
             I_start = I_now
-            I_end = 1 # 目标电流10A
+            I_end = 10 # 目标电流10A
             for i in range(steps + 1):
                 I = I_start + (I_end - I_start) * i / steps
                 if not ptnhp.set_current(I):
                     self.error_occurred.emit(f"第 {i} 步设置电流 {I:.3f} A 失败")
                     self.ramp_finished.emit(False)
                     return
-                self.msleep(100)
+                self.msleep(30)
 
             self.parent.last_current = I_end  # 保存最终电流
             self.ramp_finished.emit(True)
@@ -999,7 +996,7 @@ class StopRampThread(QThread):
             for i in range(steps + 1):
                 I = I_now * (1 - i / steps)
                 ptnhp.set_current(I)
-                self.msleep(100)
+                self.msleep(30)
 
             ptnhp.set_voltage(0)
             self.parent.last_current = 0.0  # 重置电流记录
