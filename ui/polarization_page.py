@@ -303,24 +303,20 @@ class PolarizationPage(QWidget):
         self.btn_load.clicked.connect(self.load_results)
         self.cb_particle = QComboBox()
         self.cb_particle.addItems(["H", "D"])
-        self.cb_osc_channel = QComboBox()
-        self.cb_osc_channel.addItems(["CHAN2 (光子)", "CHAN3 (磁场)"])
-        self.cb_osc_channel.currentIndexChanged.connect(self.update_oscilloscope_display)
+        # 不再显示示波器通道选择或示波器图像（右下角已移除）
         self.gain_label = QLabel("光信号增益：")
         self.gain_input = QLineEdit(str(self.gain_photon))
 
         for widget in [self.btn_background, self.btn_unpolarized, self.btn_polarized,
-                       self.btn_clear, self.btn_save, self.btn_load, self.cb_particle, self.cb_osc_channel,
-                       self.gain_label, self.gain_input]:
+                   self.btn_clear, self.btn_save, self.btn_load, self.cb_particle,
+                   self.gain_label, self.gain_input]:
             control_layout.addWidget(widget)
         control_layout.addStretch()
         main_layout.addLayout(control_layout)
 
         self.gridLayout = QGridLayout()
-        self.gridLayout.setColumnStretch(0, 1)
+        self.gridLayout.setColumnStretch(0, 3)
         self.gridLayout.setColumnStretch(1, 1)
-        self.gridLayout.setRowStretch(1, 2)
-        self.gridLayout.setRowStretch(3, 2)
 
         # 左侧改为仅显示数据表格，不再显示图表
         self.gridLayout.addWidget(QLabel("数据表格"), 0, 0)
@@ -329,12 +325,7 @@ class PolarizationPage(QWidget):
         self.textBrowser = QTextBrowser()
         self.gridLayout.addWidget(self.textBrowser, 1, 1)
 
-        self.gridLayout.addWidget(QLabel("示波器输出"), 2, 1)
-        self.Lightsignal = QWidget()
-        lightsignal_layout = QVBoxLayout(self.Lightsignal)
-        self.oscilloscope_canvas = MplCanvas(self, width=5, height=4, dpi=100)
-        lightsignal_layout.addWidget(self.oscilloscope_canvas)
-        self.gridLayout.addWidget(self.Lightsignal, 3, 1)
+        # 右侧不再显示示波器输出，保留文本输出区域
 
         # 将表格放到左侧并占据更多行，使左侧仅为表格视图
         self.tableWidget = QTableWidget()
@@ -455,33 +446,7 @@ class PolarizationPage(QWidget):
         else:
             self.textBrowser.append("准备失败，请检查电源！")
 
-    def update_oscilloscope_display(self):
-        if self.last_photon_data is None or self.last_BField_data is None:
-            return
-
-        self.oscilloscope_canvas.axes.clear()
-        ax = self.oscilloscope_canvas.axes
-
-        total_time = 1.2E-3
-        if self.cb_osc_channel.currentIndex() == 0:
-            data = self.last_photon_data
-            ax.set_title(" CHAN2 (photon)")
-        else:
-            data = self.last_BField_data
-            ax.set_title(" CHAN3 (B-Field)")
-
-        time = np.linspace(0, total_time, len(data)) * 1000
-        ax.plot(time, data)
-        ax.set_xlabel('Time (ms)')
-        ax.set_ylabel('Voltage (V)')
-        ax.tick_params(axis='both', labelsize=7)
-        self.oscilloscope_canvas.fig.tight_layout()
-        self.oscilloscope_canvas.draw()
-
-    def handle_oscilloscope_update(self, data_photon, data_BField):
-        self.last_photon_data = data_photon
-        self.last_BField_data = data_BField
-        self.update_oscilloscope_display()
+    # 示波器显示已移除，不再有相关 UI 更新方法
 
     def handle_scatter_update(self, x, y, data_type):
         # 已移除图表显示，采集中产生的单点更新不再绘制到 UI
@@ -520,7 +485,7 @@ class PolarizationPage(QWidget):
             last_current=self.last_current
         )
         self.acquisition_thread.update_scatter_signal.connect(self.handle_scatter_update)
-        self.acquisition_thread.update_oscilloscope_signal.connect(self.handle_oscilloscope_update)
+        # 不再连接示波器数据更新到 UI（避免测量期间绘图）
         self.acquisition_thread.acquisition_finished.connect(
             lambda data: self._on_acquisition_finished(data, name, data_setter, calculate_polarization))
         self.acquisition_thread.error_occurred.connect(self.textBrowser.append)
@@ -545,8 +510,6 @@ class PolarizationPage(QWidget):
         # 不再使用绘图面板，移除对 result_canvas 的调用
         self.tableWidget.clearContents()
         self.tableWidget.setRowCount(0)
-        self.oscilloscope_canvas.axes.clear()
-        self.oscilloscope_canvas.draw()
         self.textBrowser.append("测量数据已清除，磁场表仍保留。")
 
     def load_results(self):
