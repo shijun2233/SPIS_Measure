@@ -246,70 +246,7 @@ class MplCanvas(FigureCanvas):
 
 
 class ResultCanvas(MplCanvas):
-    def __init__(self, parent=None, width=6, height=4, dpi=300):
-        super().__init__(parent, width, height, dpi)
-        self.background_points = []
-        self.unpolarized_points = []
-        self.polarized_points = []
-        self.axes.set_title("Measurement Results")
-        self.axes.set_xlabel('B-Field (Gs)')
-        self.axes.set_ylabel('PMT Anode Signal (A. U.)')
-        self.axes.grid(True, linestyle='--', alpha=0.7)
-        self.axes.plot([], [], ' ', label=' ')
-        self.fig.tight_layout()
-
-    def add_scatter_point(self, x, y, data_type):
-        if data_type == "background":
-            self.background_points.append((x, y))
-            color = 'blue'
-            marker = 'o'
-            label = 'Background' if len(self.background_points) == 1 else ""
-        elif data_type == "unpolarized":
-            self.unpolarized_points.append((x, y))
-            color = 'green'
-            marker = 's'
-            label = 'Unpolarized Ion Beam' if len(self.unpolarized_points) == 1 else ""
-        elif data_type == "polarized":
-            self.polarized_points.append((x, y))
-            color = 'red'
-            marker = '^'
-            label = 'Polarized Ion Beam' if len(self.polarized_points) == 1 else ""
-        else:
-            return
-
-        self.axes.scatter(x, y, color=color, marker=marker, label=label, alpha=0.7)
-        self.update_legend()
-        self.fig.tight_layout()
-        self.draw()
-
-    def update_legend(self):
-        if self.axes.get_legend():
-            self.axes.get_legend().remove()
-
-        handles, labels = self.axes.get_legend_handles_labels()
-        valid_labels = []
-        valid_handles = []
-
-        for handle, label in zip(handles, labels):
-            if label and label != ' ' and label not in valid_labels:
-                valid_labels.append(label)
-                valid_handles.append(handle)
-
-        if valid_handles:
-            self.axes.legend(valid_handles, valid_labels)
-
-    def clear(self):
-        self.background_points = []
-        self.unpolarized_points = []
-        self.polarized_points = []
-        self.axes.clear()
-        self.axes.set_title("Measurement Results")
-        self.axes.set_xlabel('B-Field (Gs)')
-        self.axes.set_ylabel('PMT Anode Signal (A. U.)')
-        self.axes.grid(True, linestyle='--', alpha=0.7)
-        self.axes.plot([], [], ' ', label=' ')
-        self.fig.tight_layout()
-        self.draw()
+    pass
 
 
 class PolarizationPage(QWidget):
@@ -385,9 +322,8 @@ class PolarizationPage(QWidget):
         self.gridLayout.setRowStretch(1, 2)
         self.gridLayout.setRowStretch(3, 2)
 
-        self.gridLayout.addWidget(QLabel("测量结果"), 0, 0)
-        self.result_canvas = ResultCanvas(self, width=6, height=4, dpi=100)
-        self.gridLayout.addWidget(self.result_canvas, 1, 0)
+        # 左侧改为仅显示数据表格，不再显示图表
+        self.gridLayout.addWidget(QLabel("数据表格"), 0, 0)
 
         self.gridLayout.addWidget(QLabel("输出"), 0, 1)
         self.textBrowser = QTextBrowser()
@@ -400,13 +336,14 @@ class PolarizationPage(QWidget):
         lightsignal_layout.addWidget(self.oscilloscope_canvas)
         self.gridLayout.addWidget(self.Lightsignal, 3, 1)
 
-        self.gridLayout.addWidget(QLabel("数据表格"), 2, 0)
+        # 将表格放到左侧并占据更多行，使左侧仅为表格视图
         self.tableWidget = QTableWidget()
         self.tableWidget.setColumnCount(6)
         headers = ["磁场", "本底测量值", "磁场", "非极化离子测量值", "磁场", "极化离子测量值"]
         self.tableWidget.setHorizontalHeaderLabels(headers)
         self.tableWidget.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        self.gridLayout.addWidget(self.tableWidget, 3, 0)
+        # 放置表格到左侧主区域 (row 1 到 3)
+        self.gridLayout.addWidget(self.tableWidget, 1, 0, 3, 1)
 
         main_layout.addLayout(self.gridLayout)
         self.resize(1248, 1000)
@@ -547,7 +484,9 @@ class PolarizationPage(QWidget):
         self.update_oscilloscope_display()
 
     def handle_scatter_update(self, x, y, data_type):
-        self.result_canvas.add_scatter_point(x, y, data_type)
+        # 已移除图表显示，采集中产生的单点更新不再绘制到 UI
+        # 如果需要，可以将点缓冲并周期性写入表格/文件以保持流畅。
+        return
 
     def measure_background(self):
         self._start_acquisition("本底", "background", lambda data: setattr(self, 'background_data', data))
@@ -556,7 +495,8 @@ class PolarizationPage(QWidget):
         self._start_acquisition("非极化离子", "unpolarized", lambda data: setattr(self, 'unpolarized_data', data))
 
     def measure_polarized(self):
-        self._start_acquisition("极化离子", "polarized", lambda data: setattr(self, 'polarized_data', data) ,calculate_polarization=True)
+        # 取消在采集完成后自动计算极化度，改为仅保存测量数据
+        self._start_acquisition("极化离子", "polarized", lambda data: setattr(self, 'polarized_data', data))
 
     def _start_acquisition(self, name, data_type, data_setter, calculate_polarization=False):
         if self.acquisition_thread and self.acquisition_thread.isRunning():
@@ -592,9 +532,9 @@ class PolarizationPage(QWidget):
         if data is not None:
             data_setter(data)
             self.textBrowser.append(f"{name}测量完成。")  # 明确提示电流未归零
+            # 批量更新表格（一次性），避免测量过程中频繁 UI 操作导致卡顿
             self._update_table()
-            if calculate_polarization:
-                self.calculate_and_plot_polarization()
+            # 取消自动极化计算——保留手动触发计算功能
 
     def clear_data(self):
         self.background_data = None
@@ -602,8 +542,7 @@ class PolarizationPage(QWidget):
         self.polarized_data = None
         self.last_photon_data = None
         self.last_BField_data = None
-
-        self.result_canvas.clear()
+        # 不再使用绘图面板，移除对 result_canvas 的调用
         self.tableWidget.clearContents()
         self.tableWidget.setRowCount(0)
         self.oscilloscope_canvas.axes.clear()
@@ -655,8 +594,8 @@ class PolarizationPage(QWidget):
             if polarized:
                 self.polarized_data = np.array(polarized)
 
+            # 载入数据后只更新表格，不自动绘图/计算极化度
             self._update_table()
-            self.calculate_and_plot_polarization()
             self.textBrowser.append("数据加载并显示完成。")
 
         except Exception as e:
@@ -729,23 +668,52 @@ class PolarizationPage(QWidget):
 
                     writer.writerow(row_data)
 
+            # 同时生成并保存图像文件（不在 UI 中显示）
             self.textBrowser.append(f"测量结果已保存至: {file_path}")
-
             fig_path = os.path.splitext(file_path)[0] + "_plot.png"
-            params = {'font.family': 'serif',
-                      'font.serif': 'Times New Roman',
-                      'font.style': 'normal',
-                      'font.weight': 'normal',
-                      'font.size': 12,
-                      'lines.linewidth': 1,
-                      'text.usetex': False
-                      }
-            plt.rcParams.update(params)
-            original_size = self.result_canvas.fig.get_size_inches()
-            self.result_canvas.fig.set_size_inches(6, 4)
-            self.result_canvas.fig.savefig(fig_path, dpi=300, bbox_inches='tight')
-            self.result_canvas.fig.set_size_inches(original_size)
-            self.textBrowser.append(f"测量图表已保存至: {fig_path}")
+            try:
+                params = {'font.family': 'serif',
+                          'font.serif': 'Times New Roman',
+                          'font.style': 'normal',
+                          'font.weight': 'normal',
+                          'font.size': 12,
+                          'lines.linewidth': 1,
+                          'text.usetex': False
+                          }
+                plt.rcParams.update(params)
+                fig = plt.figure(figsize=(6, 4))
+                ax = fig.add_subplot(111)
+
+                if self.polarized_data is not None:
+                    try:
+                        ax.plot(self.polarized_data[:, 0], self.polarized_data[:, 1], ".", label="WFT-ON", color='red')
+                    except Exception:
+                        pass
+                if self.unpolarized_data is not None:
+                    try:
+                        ax.plot(self.unpolarized_data[:, 0], self.unpolarized_data[:, 1], "x", label="WFT-OFF", color='green')
+                    except Exception:
+                        pass
+                if self.background_data is not None:
+                    try:
+                        ax.plot(self.background_data[:, 0], self.background_data[:, 1], "*", label="background", color='blue')
+                    except Exception:
+                        pass
+
+                ax.set_title('Measurement Results')
+                ax.set_xlabel('Magnetic Field (Gs)')
+                ax.set_ylabel('PMT Anode Signal (A. U.)')
+                ax.grid(True, linestyle='--', alpha=0.7)
+                try:
+                    ax.legend()
+                except Exception:
+                    pass
+
+                fig.savefig(fig_path, dpi=300, bbox_inches='tight')
+                plt.close(fig)
+                self.textBrowser.append(f"测量图表已保存至: {fig_path}")
+            except Exception as e:
+                self.textBrowser.append(f"保存图像失败: {e}")
 
         except Exception as e:
             self.textBrowser.append(f"保存失败: {str(e)}")
@@ -770,46 +738,41 @@ class PolarizationPage(QWidget):
         if max_rows == 0:
             return
 
+        # 性能优化：批量更新表格，禁用重绘和排序以提升大量行时的流畅度
+        self.tableWidget.setUpdatesEnabled(False)
+        sorting_enabled = self.tableWidget.isSortingEnabled()
+        self.tableWidget.setSortingEnabled(False)
+
         self._update_table_rows(max_rows)
+
+        def set_cell(r, c, text, align=Qt.AlignRight | Qt.AlignVCenter):
+            item = QTableWidgetItem(text)
+            item.setTextAlignment(align)
+            self.tableWidget.setItem(r, c, item)
 
         if self.background_data is not None:
             for row, (bfield, value) in enumerate(self.background_data):
-                item_b = QTableWidgetItem(f"{bfield:.4f}")
-                item_b.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.tableWidget.setItem(row, 0, item_b)
-
-                item_v = QTableWidgetItem(f"{value:.6e}")
-                item_v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.tableWidget.setItem(row, 1, item_v)
+                set_cell(row, 0, f"{bfield:.4f}")
+                set_cell(row, 1, f"{value:.6e}")
 
         if self.unpolarized_data is not None:
             for row, (bfield, value) in enumerate(self.unpolarized_data):
-                item_b = QTableWidgetItem(f"{bfield:.4f}")
-                item_b.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.tableWidget.setItem(row, 2, item_b)
-
-                item_v = QTableWidgetItem(f"{value:.6e}")
-                item_v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.tableWidget.setItem(row, 3, item_v)
+                set_cell(row, 2, f"{bfield:.4f}")
+                set_cell(row, 3, f"{value:.6e}")
 
         if self.polarized_data is not None:
             for row, (bfield, value) in enumerate(self.polarized_data):
-                item_b = QTableWidgetItem(f"{bfield:.4f}")
-                item_b.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.tableWidget.setItem(row, 4, item_b)
+                set_cell(row, 4, f"{bfield:.4f}")
+                set_cell(row, 5, f"{value:.6e}")
 
-                item_v = QTableWidgetItem(f"{value:.6e}")
-                item_v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.tableWidget.setItem(row, 5, item_v)
+        # 恢复表格更新和排序
+        self.tableWidget.setSortingEnabled(sorting_enabled)
+        self.tableWidget.setUpdatesEnabled(True)
 
     def calculate_and_plot_polarization(self):
         if self.background_data is None or self.polarized_data is None:
             self.textBrowser.append("请先完成本底和极化离子测量。")
             return
-
-        self.result_canvas.axes.clear()
-        ax = self.result_canvas.axes
-
         particle_type = self.cb_particle.currentText()
 
         if particle_type == 'H':
@@ -819,14 +782,6 @@ class PolarizationPage(QWidget):
             self.textBrowser.append(f"Np: {polarization['peak_signal'][1][0]:.3e}")
             self.textBrowser.append(f"Nn: {polarization['peak_signal'][1][1]:.3e}")
             self.textBrowser.append(f"质子极化率: {polarization['polarization']:.3f}")
-            ax.plot(self.polarized_data[:, 0], self.polarized_data[:, 1], ".", label="WFT-ON", color='red')
-            ax.plot(self.background_data[:, 0], self.background_data[:, 1], "*", label="background", color='blue')
-            ax.text(0.5, 0.85, f"Pz = {polarization['polarization']:.3f}",
-                    horizontalalignment='center',
-                    verticalalignment='center',
-                    transform=ax.transAxes,
-                    fontsize=9, fontweight='bold')
-            ax.set_title("Polarization of Proton", fontsize=18)
 
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("测量结果")
@@ -835,30 +790,6 @@ class PolarizationPage(QWidget):
                             f"<span style='color:red; font-weight:bold;'>{polarization['polarization']:.2%}</span>"
                             f"</p></body></html>")
             msg_box.setIcon(QMessageBox.Information)
-            msg_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: #f0f8ff;
-                    border: 2px solid #4682b4;
-                    min-width: 450px;
-                    min-height: 250px;
-                    font-size: 20pt;
-                }
-                QMessageBox QLabel {
-                    font-size: 16pt;
-                    color: #333333;
-                    padding: 10px;
-                }
-                QPushButton {
-                    font-size: 14pt;
-                    padding: 8px 20px;
-                    background-color: #4682b4;
-                    color: white;
-                    border-radius: 5px;
-                }
-                QPushButton:hover {
-                    background-color: #5a9bd3;
-                }
-            """)
             msg_box.exec_()
 
         elif particle_type == 'D':
@@ -870,20 +801,7 @@ class PolarizationPage(QWidget):
             self.textBrowser.append(f"N0: {polarization['peak_signal'][1][1]:.3e}")
             self.textBrowser.append(f"Nn: {polarization['peak_signal'][1][2]:.3e}")
             self.textBrowser.append(f"氘极化率 Pz: {polarization['P_z']:.3f}, Pzz: {polarization['P_zz']:.3f}")
-            ax.plot(self.unpolarized_data[:, 0], self.unpolarized_data[:, 1], "x", label="WFT-OFF", color='green')
-            ax.plot(self.polarized_data[:, 0], self.polarized_data[:, 1], ".", label="WFT-ON", color='red')
-            ax.plot(self.background_data[:, 0], self.background_data[:, 1], "*", label="background", color='blue')
-            ax.text(0.3, 0.85, f'Pz = {polarization["P_z"]:.3f}',
-                    horizontalalignment='center',
-                    verticalalignment='center',
-                    transform=ax.transAxes,
-                    fontsize=9, fontweight='bold')
-            ax.text(0.3, 0.65, f'Pzz = {polarization["P_zz"]:.3f}',
-                    horizontalalignment='center',
-                    verticalalignment='center',
-                    transform=ax.transAxes,
-                    fontsize=9, fontweight='bold')
-            ax.set_title("Polarization of Deuteron", fontsize=18)
+
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("测量结果")
             msg_box.setText(f"<html><body><h2 style='color:blue;'>氘离子束极化率</h2>"
@@ -891,39 +809,7 @@ class PolarizationPage(QWidget):
                             f"<span style='color:red; font-weight:bold;'>{polarization['P_z'] / 0.66666:.2%}</span>"
                             f"</p></body></html>")
             msg_box.setIcon(QMessageBox.Information)
-            msg_box.setStyleSheet("""
-                            QMessageBox {
-                                background-color: #f0f8ff;
-                                border: 2px solid #4682b4;
-                                min-width: 450px;
-                                min-height: 250px;
-                                font-size: 20pt;
-                            }
-                            QMessageBox QLabel {
-                                font-size: 16pt;
-                                color: #333333;
-                                padding: 10px;
-                            }
-                            QPushButton {
-                                font-size: 14pt;
-                                padding: 8px 20px;
-                                background-color: #4682b4;
-                                color: white;
-                                border-radius: 5px;
-                            }
-                            QPushButton:hover {
-                                background-color: #5a9bd3;
-                            }
-                        """)
             msg_box.exec_()
-
-        ax.set_xlabel('Magnetic Field (Gs)', fontsize=15)
-        ax.set_ylabel('PMT Anode Signal (A. U.)', fontsize=15)
-        ax.tick_params(axis='both', labelsize=12)
-        ax.grid(True, linestyle='--', alpha=0.7)
-        self.result_canvas.update_legend()
-        self.result_canvas.fig.tight_layout()
-        self.result_canvas.draw()
 
 
 class PrepareThread(QThread):
