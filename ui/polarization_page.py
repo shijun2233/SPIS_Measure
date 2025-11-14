@@ -185,7 +185,12 @@ class DataAcquisitionThread(QThread):
 
                 current = Currents[i]
                 self.current_updated.emit(current)
-                ptnhp.set_current(current)
+                if current != Currents[i - 1] and i > 0:
+                    ptnhp.set_current(current)
+                    time.sleep(1)
+                elif i == 0:
+                    ptnhp.set_current(current)
+                    time.sleep(1)
 
                 BField_val = BFields_settings[i]
 
